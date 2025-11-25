@@ -1,8 +1,8 @@
 import pandas as pd
 import numpy as np
 from sqlalchemy.orm import Session
-from app.database import SessionLocal, engine
-from app import models
+from app.db.database import SessionLocal, engine
+from app.db import models
 
 # ---------------------------------------------------------------------
 # CONFIGURACIÓN

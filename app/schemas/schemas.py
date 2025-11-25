@@ -2,7 +2,29 @@ from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date, datetime
 
-# --- CLASES BASE (Lo común) ---
+# ==========================================
+# SEGURIDAD Y USUARIOS (Lo que faltaba)
+# ==========================================
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    email: Optional[str] = None
+
+# ESTA ES LA CLASE QUE TE FALTABA
+class UsuarioCreate(BaseModel):
+    nombre_completo: str
+    email: str
+    password: str
+    rol: str  # 'ADMIN', 'CONSULTOR', 'CLIENTE'
+    empresa_id: Optional[int] = None
+
+# ==========================================
+# MODELOS BASE (Empresas, Áreas, Actividades)
+# ==========================================
+
 class EmpresaBase(BaseModel):
     razon_social: str
     ruc: Optional[str] = None
@@ -18,22 +40,29 @@ class ActividadBase(BaseModel):
     prioridad: str = "Media"
     observaciones: Optional[str] = None
 
-# --- CREACIÓN (Lo que envía tu compañera) ---
+# ==========================================
+# MODELOS DE CREACIÓN (Entrada)
+# ==========================================
+
 class ActividadCreate(ActividadBase):
     empresa_id: int
     area_id: int
-    # El responsable es opcional al crear
     responsable_id: Optional[int] = None 
 
-# --- ACTUALIZACIÓN (Para cambiar estado o subir evidencia) ---
+# ==========================================
+# MODELOS DE ACTUALIZACIÓN
+# ==========================================
+
 class ActividadUpdate(BaseModel):
     estado: Optional[str] = None
     avance: Optional[float] = None
     link_evidencia: Optional[str] = None
     fecha_entrega_real: Optional[date] = None
 
-# --- RESPUESTA (Lo que ve el Cliente en el Dashboard) ---
-# Aquí incluimos los IDs y nombres para que el frontend no sufra
+# ==========================================
+# MODELOS DE RESPUESTA (Salida / Lectura)
+# ==========================================
+
 class ActividadOut(ActividadBase):
     id: int
     estado: str
@@ -41,12 +70,12 @@ class ActividadOut(ActividadBase):
     link_evidencia: Optional[str]
     created_at: Optional[datetime]
     
-    # Nombres legibles (no solo IDs)
+    # Nombres legibles
     nombre_empresa: str 
     nombre_area: str
 
     class Config:
-        from_attributes = True # Permite leer desde SQL
+        from_attributes = True
 
 class EmpresaOut(EmpresaBase):
     id: int
