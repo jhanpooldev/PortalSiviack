@@ -4,7 +4,7 @@ from typing import List
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from datetime import timedelta
-from jose import JWTError, jwt # Necesario para decodificar el token
+from jose import JWTError, jwt 
 
 # Importaciones internas
 from app.schemas import schemas
@@ -12,10 +12,10 @@ from app.db.database import engine, get_db
 from app.db import models
 from app.core import security
 
-# 1. Crear tablas automáticamente si no existen
+# 1. Crear tablas automáticamente (Si se hizo reset)
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="SIVIACK Portal API", version="1.0")
+app = FastAPI(title="SIVIACK Portal API", version="2.0")
 
 # ==========================================
 # CONFIGURACIÓN DE SEGURIDAD (CORS)
@@ -24,6 +24,7 @@ origins = [
     "http://localhost",
     "http://localhost:8080",
     "http://127.0.0.1:5500",
+    "http://localhost:5173", # Puerto de Vite/React
     "*"
 ]
 
@@ -35,131 +36,212 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configuración de Auth (Indica a Swagger que el login es en /token)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # ==========================================
-# FUNCIONES DE SEGURIDAD (EL "GUARDIA")
+# FUNCIONES DE SEGURIDAD
 # ==========================================
 
-# 1. Decodificar el Token y obtener el usuario actual
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="No se pudieron validar las credenciales",
+        detail="Credenciales inválidas",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
         payload = jwt.decode(token, security.SECRET_KEY, algorithms=[security.ALGORITHM])
         email: str = payload.get("sub")
-        if email is None:
-            raise credentials_exception
+        if email is None: raise credentials_exception
     except JWTError:
         raise credentials_exception
         
     user = db.query(models.Usuario).filter(models.Usuario.email == email).first()
-    if user is None:
-        raise credentials_exception
+    if user is None: raise credentials_exception
     return user
 
-# 2. Validar si es ADMIN (Jefe)
 def solo_admin(current_user: models.Usuario = Depends(get_current_user)):
     if current_user.rol != "ADMIN":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
-            detail="⛔ Acceso Denegado: Se requieren permisos de Administrador."
-        )
+        raise HTTPException(status_code=403, detail="Acceso Denegado: Solo Admin")
     return current_user
 
 # ==========================================
-# RUTAS DE AUTENTICACIÓN & USUARIOS
+# AUTENTICACIÓN Y USUARIOS
 # ==========================================
 
 @app.post("/token", response_model=schemas.Token, tags=["Seguridad"])
-def login_para_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    # 1. Buscar usuario
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     usuario = db.query(models.Usuario).filter(models.Usuario.email == form_data.username).first()
-    
-    # 2. Validar password
     if not usuario or not security.verify_password(form_data.password, usuario.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email o contraseña incorrectos",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
     
-    # 3. Generar Token
-    access_token_expires = timedelta(minutes=security.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = security.create_access_token(
         data={"sub": usuario.email, "rol": usuario.rol, "id": usuario.id},
-        expires_delta=access_token_expires
+        expires_delta=timedelta(minutes=security.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
-    
     return {"access_token": access_token, "token_type": "bearer"}
 
-# RUTA PROTEGIDA: Solo el Jefe crea usuarios
 @app.post("/usuarios/", tags=["Gestión Usuarios"])
-def registrar_usuario(
-    nuevo_usuario: schemas.UsuarioCreate, 
-    db: Session = Depends(get_db), 
-    jefe: models.Usuario = Depends(solo_admin) # <--- EL CANDADO
-):
-    if db.query(models.Usuario).filter_by(email=nuevo_usuario.email).first():
-        raise HTTPException(status_code=400, detail="El email ya está registrado")
+def crear_usuario(usuario: schemas.UsuarioCreate, db: Session = Depends(get_db), admin: models.Usuario = Depends(solo_admin)):
+    if db.query(models.Usuario).filter_by(email=usuario.email).first():
+        raise HTTPException(status_code=400, detail="Email ya registrado")
     
-    usuario_db = models.Usuario(
-        nombre_completo=nuevo_usuario.nombre_completo,
-        email=nuevo_usuario.email,
-        password_hash=security.get_password_hash(nuevo_usuario.password),
-        rol=nuevo_usuario.rol,
-        empresa_id=nuevo_usuario.empresa_id
+    nuevo = models.Usuario(
+        nombre_completo=usuario.nombre_completo,
+        email=usuario.email,
+        password_hash=security.get_password_hash(usuario.password),
+        rol=usuario.rol,
+        empresa_id=usuario.empresa_id
     )
-    db.add(usuario_db)
+    db.add(nuevo)
     db.commit()
-    return {"mensaje": f"Usuario {nuevo_usuario.email} creado exitosamente por {jefe.nombre_completo}"}
+    return {"mensaje": "Usuario creado"}
+
+@app.get("/usuarios/", response_model=List[schemas.UsuarioOut], tags=["Gestión Usuarios"])
+def listar_usuarios(rol: str = None, db: Session = Depends(get_db)):
+    query = db.query(models.Usuario)
+    if rol: query = query.filter(models.Usuario.rol == rol)
+    return query.all()
+
+@app.delete("/usuarios/{id}", tags=["Gestión Usuarios"])
+def eliminar_usuario(id: int, db: Session = Depends(get_db), admin: models.Usuario = Depends(solo_admin)):
+    user = db.query(models.Usuario).filter(models.Usuario.id == id).first()
+    if not user: raise HTTPException(404, "Usuario no encontrado")
+    db.delete(user)
+    db.commit()
+    return {"mensaje": "Usuario eliminado"}
+
+@app.put("/usuarios/{id}", tags=["Gestión Usuarios"])
+def actualizar_usuario(id: int, datos: schemas.UsuarioCreate, db: Session = Depends(get_db), admin: models.Usuario = Depends(solo_admin)):
+    user = db.query(models.Usuario).filter(models.Usuario.id == id).first()
+    if not user: raise HTTPException(404, "Usuario no encontrado")
+    
+    user.nombre_completo = datos.nombre_completo
+    user.email = datos.email
+    user.rol = datos.rol
+    
+    # Solo actualizamos contraseña si envían algo diferente a la default o vacío
+    if datos.password and len(datos.password) > 0:
+         user.password_hash = security.get_password_hash(datos.password)
+
+    db.commit()
+    return {"mensaje": "Usuario actualizado"}
 
 # ==========================================
-# RUTAS DE CONFIGURACIÓN (Empresas y Áreas)
+# EMPRESAS (CRUD)
 # ==========================================
 
-@app.post("/empresas/", response_model=schemas.EmpresaOut, tags=["Configuración"])
+@app.post("/empresas/", response_model=schemas.EmpresaOut, tags=["Empresas"])
 def crear_empresa(empresa: schemas.EmpresaBase, db: Session = Depends(get_db)):
-    db_empresa = models.Empresa(**empresa.dict())
-    db.add(db_empresa)
+    db_emp = models.Empresa(**empresa.dict())
+    db.add(db_emp)
     db.commit()
-    db.refresh(db_empresa)
-    return db_empresa
+    db.refresh(db_emp)
+    return db_emp
 
-@app.get("/empresas/", response_model=List[schemas.EmpresaOut], tags=["Configuración"])
+@app.get("/empresas/", response_model=List[schemas.EmpresaOut], tags=["Empresas"])
 def listar_empresas(db: Session = Depends(get_db)):
     return db.query(models.Empresa).all()
 
-@app.post("/areas/", response_model=schemas.AreaOut, tags=["Configuración"])
-def crear_area(area: schemas.AreaBase, db: Session = Depends(get_db)):
+@app.delete("/empresas/{id}", tags=["Empresas"])
+def eliminar_empresa(id: int, db: Session = Depends(get_db)):
+    emp = db.query(models.Empresa).filter(models.Empresa.id == id).first()
+    if not emp: raise HTTPException(404, "Empresa no encontrada")
+    db.delete(emp)
+    db.commit()
+    return {"mensaje": "Empresa eliminada"}
+
+@app.put("/empresas/{id}", response_model=schemas.EmpresaOut, tags=["Empresas"])
+def actualizar_empresa(id: int, empresa_update: schemas.EmpresaBase, db: Session = Depends(get_db)):
+    # 1. Buscar la empresa existente en la base de datos
+    db_emp = db.query(models.Empresa).filter(models.Empresa.id == id).first()
+
+    # 2. Verificar si existe
+    if not db_emp:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    # 3. Actualizar los atributos del objeto db_emp con los del esquema recibido
+    # (Esto actualiza dinámicamente todos los campos que vengan en empresa_update)
+    for key, value in empresa_update.dict().items():
+        setattr(db_emp, key, value)
+
+    # 4. Confirmar cambios y refrescar el objeto
+    db.commit()
+    db.refresh(db_emp)
+    
+    return db_emp
+# ==========================================
+# ÁREAS (CRUD VINCULADO)
+# ==========================================
+
+@app.post("/areas/", response_model=schemas.AreaOut, tags=["Áreas"])
+def crear_area(area: schemas.AreaCreate, db: Session = Depends(get_db)):
+    # Validar que la empresa exista
+    emp = db.query(models.Empresa).filter(models.Empresa.id == area.empresa_id).first()
+    if not emp: raise HTTPException(404, "La empresa especificada no existe")
+
     db_area = models.Area(**area.dict())
     db.add(db_area)
     db.commit()
     db.refresh(db_area)
+    
+    # Rellenar nombre para la respuesta
+    db_area.nombre_empresa = emp.razon_social
     return db_area
 
-@app.get("/areas/", response_model=List[schemas.AreaOut], tags=["Configuración"])
-def listar_areas(db: Session = Depends(get_db)):
-    return db.query(models.Area).all()
+@app.get("/areas/", response_model=List[schemas.AreaOut], tags=["Áreas"])
+def listar_areas(empresa_id: int = None, db: Session = Depends(get_db)):
+    query = db.query(models.Area)
+    if empresa_id:
+        query = query.filter(models.Area.empresa_id == empresa_id)
+    
+    areas = query.all()
+    # Mapeo manual de nombres
+    for a in areas:
+        a.nombre_empresa = a.empresa.razon_social if a.empresa else "Sin Empresa"
+    return areas
+
+@app.delete("/areas/{id}", tags=["Áreas"])
+def eliminar_area(id: int, db: Session = Depends(get_db)):
+    area = db.query(models.Area).filter(models.Area.id == id).first()
+    if not area: raise HTTPException(404, "Área no encontrada")
+    db.delete(area)
+    db.commit()
+    return {"mensaje": "Área eliminada"}
+
+@app.put("/areas/{id}", response_model=schemas.AreaOut, tags=["Áreas"])
+def actualizar_area(id: int, datos: schemas.AreaBase, db: Session = Depends(get_db)):
+    area = db.query(models.Area).filter(models.Area.id == id).first()
+    if not area: raise HTTPException(404, "Área no encontrada")
+    
+    area.codigo = datos.codigo
+    area.nombre = datos.nombre
+    # Nota: No solemos cambiar la empresa_id al editar por seguridad, pero se podría
+    
+    db.commit()
+    db.refresh(area)
+    # Re-mapear nombre empresa para la respuesta
+    area.nombre_empresa = area.empresa.razon_social if area.empresa else "N/A"
+    return area
 
 # ==========================================
-# RUTAS CORE (Actividades)
+# ACTIVIDADES (CORE)
 # ==========================================
 
 @app.post("/actividades/", response_model=schemas.ActividadOut, tags=["Actividades"])
 def crear_actividad(actividad: schemas.ActividadCreate, db: Session = Depends(get_db)):
-    nueva_actividad = models.Actividad(**actividad.dict())
-    db.add(nueva_actividad)
+    nueva = models.Actividad(**actividad.dict())
+    db.add(nueva)
     db.commit()
-    db.refresh(nueva_actividad)
+    db.refresh(nueva)
     
-    nueva_actividad.nombre_empresa = nueva_actividad.empresa_rel.razon_social
-    nueva_actividad.nombre_area = nueva_actividad.area_rel.codigo
-    return nueva_actividad
+    # Mapeo de nombres para respuesta inmediata
+    if nueva.empresa_rel: nueva.nombre_empresa = nueva.empresa_rel.razon_social
+    else: nueva.nombre_empresa = "N/A"
+        
+    if nueva.area_rel: nueva.nombre_area = nueva.area_rel.nombre
+    else: nueva.nombre_area = "N/A"
+        
+    return nueva
 
 @app.get("/actividades/", response_model=List[schemas.ActividadOut], tags=["Actividades"])
 def listar_actividades(empresa_id: int = None, db: Session = Depends(get_db)):
@@ -169,23 +251,26 @@ def listar_actividades(empresa_id: int = None, db: Session = Depends(get_db)):
     
     actividades = query.all()
     for act in actividades:
-        act.nombre_empresa = act.empresa_rel.razon_social
-        act.nombre_area = act.area_rel.codigo
+        act.nombre_empresa = act.empresa_rel.razon_social if act.empresa_rel else "N/A"
+        act.nombre_area = act.area_rel.nombre if act.area_rel else "N/A"
+    
     return actividades
 
 @app.put("/actividades/{id}", response_model=schemas.ActividadOut, tags=["Actividades"])
-def actualizar_estado(id: int, cambios: schemas.ActividadUpdate, db: Session = Depends(get_db)):
-    actividad = db.query(models.Actividad).filter(models.Actividad.id == id).first()
-    if not actividad:
-        raise HTTPException(status_code=404, detail="Actividad no encontrada")
+def actualizar_actividad(id: int, cambios: schemas.ActividadUpdate, db: Session = Depends(get_db)):
+    act = db.query(models.Actividad).filter(models.Actividad.id == id).first()
+    if not act: raise HTTPException(404, "Actividad no encontrada")
     
-    if cambios.estado: actividad.estado = cambios.estado
-    if cambios.avance: actividad.avance = cambios.avance
-    if cambios.link_evidencia: actividad.link_evidencia = cambios.link_evidencia
+    # Actualizar campos dinámicamente
+    datos = cambios.dict(exclude_unset=True)
+    for key, value in datos.items():
+        setattr(act, key, value)
     
     db.commit()
-    db.refresh(actividad)
+    db.refresh(act)
     
-    actividad.nombre_empresa = actividad.empresa_rel.razon_social
-    actividad.nombre_area = actividad.area_rel.codigo
-    return actividad
+    # Mapeo para respuesta
+    act.nombre_empresa = act.empresa_rel.razon_social if act.empresa_rel else "N/A"
+    act.nombre_area = act.area_rel.nombre if act.area_rel else "N/A"
+    
+    return act
