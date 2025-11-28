@@ -281,3 +281,19 @@ def obtener_listas_desplegables(db: Session = Depends(get_db)):
         "resultados": db.query(models.ControlResultados).all(),
         "status": db.query(models.StatusActividad).all()
     }
+@app.get("/actividades/{id}", response_model=schemas.ActividadOut, tags=["Actividades"])
+def obtener_actividad(id: int, db: Session = Depends(get_db)):
+    act = db.query(models.Actividad).filter(models.Actividad.id == id).first()
+    if not act: raise HTTPException(404, "Actividad no encontrada")
+    
+    # Mapeo de nombres
+    act.nombre_empresa = act.empresa_rel.razon_social if act.empresa_rel else "N/A"
+    act.nombre_area = act.area_rel.codigo if act.area_rel else "N/A"
+    act.nombre_responsable = act.responsable_rel.nombre_completo if act.responsable_rel else "S/A"
+    act.nombre_status = act.status_rel.nombre if act.status_rel else "Sin Estado"
+    
+    # Mapeo de catálogos adicionales (Para ver detalles completos)
+    # Estos nombres no están en ActividadOut base, pero podemos agregarlos o mostrarlos en frontend
+    # Por ahora ActividadOut tiene los básicos. 
+    
+    return act
