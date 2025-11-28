@@ -7,10 +7,14 @@ const API_URL = "http://localhost:8000";
 
 const Dashboard = () => {
     const navigate = useNavigate();
+    
+    // Estados de Datos
     const [actividades, setActividades] = useState([]);
+    
+    // Estados de Interfaz
     const [loading, setLoading] = useState(true);
-    const [errorMsg, setErrorMsg] = useState(null); // Nuevo estado para errores
     const [usuario, setUsuario] = useState({ nombre: "Usuario", rol: "" });
+    const [errorMsg, setErrorMsg] = useState(null);
     
     // Modales
     const [showModal, setShowModal] = useState(false);
@@ -24,18 +28,17 @@ const Dashboard = () => {
         try {
             const payload = JSON.parse(atob(token.split('.')[1]));
             setUsuario({ nombre: payload.sub, rol: payload.rol });
-        } catch (e) { console.error("Token corrupto"); handleLogout(); }
+        } catch (e) { console.error("Token error"); handleLogout(); }
 
         cargarDatos(token);
     }, []);
 
-    // 2. CARGA DE DATOS SEGURA (Anti-Infinite Loading)
+    // 2. CARGA DE DATOS
     const cargarDatos = async (token) => {
         setLoading(true);
         setErrorMsg(null);
         try {
             const config = { headers: { Authorization: `Bearer ${token}` } };
-            // Hacemos GET a la API
             const response = await axios.get(`${API_URL}/actividades/`, config);
             setActividades(response.data);
         } catch (error) {
@@ -43,10 +46,9 @@ const Dashboard = () => {
             if (error.response?.status === 401) {
                 handleLogout();
             } else {
-                setErrorMsg("No se pudieron cargar las actividades. Verifica el servidor.");
+                setErrorMsg("No se pudo conectar con el servidor.");
             }
         } finally {
-            // ESTO ES CLAVE: Siempre quitamos el loading, pase lo que pase
             setLoading(false);
         }
     };
@@ -67,40 +69,75 @@ const Dashboard = () => {
         setShowModal(true);
     };
 
+    // --- FUNCIÓN CLAVE: LIMPIEZA DE DATOS (EVITA EL ERROR 422) ---
+    const prepararDatos = (formData) => {
+        const dataLimpia = { ...formData };
+
+        Object.keys(dataLimpia).forEach(key => {
+            const valor = dataLimpia[key];
+
+            // 1. Convertir vacíos a NULL
+            if (valor === "" || valor === "NaN") {
+                dataLimpia[key] = null;
+            }
+            
+            // 2. Convertir IDs numéricos que vienen como string
+            else if (key.endsWith("_id") && valor !== null) {
+                const numero = parseInt(valor, 10);
+                dataLimpia[key] = isNaN(numero) ? null : numero;
+            }
+            
+            // 3. Avance a Float
+            else if (key === "avance") {
+                dataLimpia[key] = parseFloat(valor) || 0.0;
+            }
+        });
+        
+        // Eliminamos campos que no deben enviarse al crear/editar si existen
+        delete dataLimpia.id;
+        delete dataLimpia.nombre_empresa;
+        delete dataLimpia.nombre_area;
+        delete dataLimpia.nombre_responsable;
+        delete dataLimpia.nombre_status;
+
+        return dataLimpia;
+    };
+
     const handleGuardar = async (formData) => {
         const token = localStorage.getItem('access_token');
         const config = { headers: { Authorization: `Bearer ${token}` } };
 
-        try {
-            // Limpieza de datos vacíos antes de enviar
-            const dataClean = { ...formData };
-            if (!dataClean.fecha_entrega_real) delete dataClean.fecha_entrega_real;
-            if (!dataClean.proxima_validacion) delete dataClean.proxima_validacion;
+        // LIMPIAR DATOS
+        const payload = prepararDatos(formData);
+        console.log("Enviando Payload Limpio:", payload);
 
+        try {
             if (actividadEditar) {
-                await axios.put(`${API_URL}/actividades/${actividadEditar.id}`, dataClean, config);
+                await axios.put(`${API_URL}/actividades/${actividadEditar.id}`, payload, config);
                 alert("✅ Actividad Actualizada");
             } else {
-                await axios.post(`${API_URL}/actividades/`, dataClean, config);
+                await axios.post(`${API_URL}/actividades/`, payload, config);
                 alert("✅ Actividad Creada");
             }
             setShowModal(false);
             cargarDatos(token);
         } catch (error) {
             console.error(error);
-            alert(`Error al guardar: ${error.response?.data?.detail || error.message}`);
+            let msg = "Error desconocido.";
+            if (error.response?.data?.detail) {
+                const det = error.response.data.detail;
+                msg = Array.isArray(det) ? det.map(e => `${e.loc[1]}: ${e.msg}`).join('\n') : det;
+            }
+            alert(`⚠️ No se pudo guardar:\n${msg}`);
         }
     };
 
     // --- RENDERIZADO ---
-    
-    // Filtro para Vista Cliente: Cliente solo ve tabla, no botones
     const esCliente = usuario.rol === 'CLIENTE';
     const puedeEditar = usuario.rol === 'ADMIN' || usuario.rol === 'CONSULTOR';
 
     return (
         <div className="min-vh-100 bg-light">
-            {/* NAVBAR */}
             <nav className="navbar navbar-dark bg-primary px-4 shadow-sm" style={{background: '#002B5C'}}>
                 <a className="navbar-brand fw-bold" href="#">🚀 SIVIACK Portal</a>
                 <div className="text-white d-flex align-items-center ms-auto">
@@ -113,17 +150,12 @@ const Dashboard = () => {
             </nav>
 
             <div className="container mt-4">
-                
-                {/* MENSAJE DE ERROR VISIBLE */}
                 {errorMsg && <div className="alert alert-danger">{errorMsg}</div>}
 
-                {/* CABECERA */}
                 <div className="d-flex justify-content-between align-items-center mb-4">
                     <h2 className="text-secondary fw-light">
                         {esCliente ? 'Mis Actividades' : 'Panel de Control'}
                     </h2>
-                    
-                    {/* BOTONERA (Oculta para Clientes) */}
                     {!esCliente && (
                         <div className="d-flex gap-2">
                             {usuario.rol === 'ADMIN' && (
@@ -138,13 +170,12 @@ const Dashboard = () => {
                     )}
                 </div>
 
-                {/* TABLA DE DATOS */}
                 <div className="card shadow-sm border-0">
                     <div className="card-body p-0">
                         {loading ? (
                             <div className="text-center p-5">
                                 <div className="spinner-border text-primary mb-2"></div>
-                                <p>Conectando con SIVIACK...</p>
+                                <p>Cargando...</p>
                             </div>
                         ) : (
                             <div className="table-responsive">
@@ -186,7 +217,7 @@ const Dashboard = () => {
                                                     </td>
                                                     <td>
                                                         {act.link_evidencia ? (
-                                                            <a href={act.link_evidencia} target="_blank" className="btn btn-sm btn-outline-success">Ver 📎</a>
+                                                            <a href={act.link_evidencia} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline-success">Ver 📎</a>
                                                         ) : <span className="text-muted">-</span>}
                                                     </td>
                                                 </tr>
@@ -200,7 +231,6 @@ const Dashboard = () => {
                 </div>
             </div>
 
-            {/* MODAL */}
             <ActivityFormModal 
                 show={showModal} 
                 handleClose={() => setShowModal(false)} 

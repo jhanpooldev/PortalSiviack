@@ -2,10 +2,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date, datetime
 
-# ==========================================
-# 1. SEGURIDAD Y USUARIOS
-# ==========================================
-
+# 1. SEGURIDAD
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -17,7 +14,7 @@ class UsuarioCreate(BaseModel):
     nombre_completo: str
     email: str
     password: str
-    rol: str  # 'ADMIN', 'CONSULTOR', 'CLIENTE'
+    rol: str
     empresa_id: Optional[int] = None
 
 class UsuarioOut(BaseModel):
@@ -28,121 +25,100 @@ class UsuarioOut(BaseModel):
     class Config:
         from_attributes = True
 
-# ==========================================
-# 2. EMPRESAS (Clientes)
-# ==========================================
+# 2. CATÁLOGOS
+class CatalogoBase(BaseModel):
+    id: int
+    nombre: str
+    class Config:
+        from_attributes = True
 
+class ListasDesplegables(BaseModel):
+    origenes: List[CatalogoBase]
+    tipos_req: List[CatalogoBase]
+    servicios: List[CatalogoBase]
+    intervenciones: List[CatalogoBase]
+    medios: List[CatalogoBase]
+    resultados: List[CatalogoBase]
+    status: List[CatalogoBase]
+
+# 3. EMPRESAS Y ÁREAS
 class EmpresaBase(BaseModel):
     razon_social: str
     ruc: Optional[str] = None
+    shk: Optional[str] = None
 
 class EmpresaOut(EmpresaBase):
     id: int
     class Config:
         from_attributes = True
 
-# ==========================================
-# 3. ÁREAS (Catálogo vinculado a Empresa)
-# ==========================================
-
 class AreaBase(BaseModel):
     codigo: str
     nombre: str
 
-# IMPORTANTE: Al crear un área, es OBLIGATORIO decir de qué empresa es
 class AreaCreate(AreaBase):
     empresa_id: int 
 
 class AreaOut(AreaBase):
     id: int
     empresa_id: int
-    nombre_empresa: Optional[str] = None # Para mostrar en la tabla del Admin
+    nombre_empresa: Optional[str] = None
     class Config:
         from_attributes = True
 
-# ==========================================
-# 4. ACTIVIDADES (Campos Completos del Excel)
-# ==========================================
-
+# 4. ACTIVIDADES (MODIFICADO V1.2)
 class ActividadBase(BaseModel):
-    # Fechas
-    fecha_origen: Optional[date] = None
+    descripcion: str
+    empresa_id: int
+    area_id: int
+    
+    origen_id: Optional[int] = None
+    tipo_req_id: Optional[int] = None
+    tipo_servicio_id: Optional[int] = None
+    tipo_intervencion_id: Optional[int] = None
+    
+    # --- CAMBIOS AQUÍ ---
+    dueno_proceso: Optional[str] = None
+    responsable_id: Optional[int] = None
+    quien_revisa: Optional[str] = None   # Ahora es String (Jefe...)
+    quien_aprueba: Optional[str] = None  # Ahora es String (Gerente...)
+    autoridad_rq: Optional[str] = None
+    
     fecha_compromiso: Optional[date] = None
     fecha_entrega_real: Optional[date] = None
     proxima_validacion: Optional[date] = None
+    frecuencia_control_dias: Optional[int] = None
     
-    # Datos Principales
-    shk: Optional[str] = None
-    descripcion: str
-    development_doing: Optional[str] = None
-    status: Optional[str] = "Abierta"
+    status_id: Optional[int] = None
     avance: Optional[float] = 0.0
-    
-    # Clasificación y Prioridad
+    condicion_actual: Optional[str] = "Abierta"
     prioridad_atencion: Optional[str] = "Media"
-    prioridad_accion: Optional[str] = None
+    
+    development_doing: Optional[str] = None
     orden_servicio_legal: Optional[str] = None
-    origen_requerimiento: Optional[str] = None
-    tipo_requerimiento: Optional[str] = None
-    condicion_actual: Optional[str] = None
-    
-    # Responsables
-    dueno_proceso: Optional[str] = None
-    responsable_exito: Optional[str] = None
-    quien_revisa: Optional[str] = None
-    quien_aprueba: Optional[str] = None
-    autoridad_rq: Optional[str] = None
-    
-    # Detalles Técnicos
-    tipo_servicio: Optional[str] = None
-    tipo_intervencion: Optional[str] = None
     producto_entregable: Optional[str] = None
-    
-    # Control
-    medio_control: Optional[str] = None
-    frecuencia_control: Optional[int] = None
-    control_resultados: Optional[str] = None
-    days_late: Optional[int] = 0
-    
-    # Evidencias y Observaciones
+    medio_control_id: Optional[int] = None
+    control_resultados_id: Optional[int] = None
     link_evidencia: Optional[str] = None
     observaciones: Optional[str] = None
 
-# --- CREACIÓN ---
 class ActividadCreate(ActividadBase):
-    empresa_id: int
-    area_id: int
+    pass 
 
-# --- ACTUALIZACIÓN ---
 class ActividadUpdate(ActividadBase):
-    pass # Hereda todo, permite actualizar cualquier campo
+    pass
 
-# --- RESPUESTA (Lo que ve el frontend) ---
 class ActividadOut(ActividadBase):
     id: int
-    created_at: Optional[datetime]
+    origin_date: Optional[date] = None
+    days_late: Optional[int] = 0
+    prioridad_accion: Optional[str] = None
+    created_at: Optional[datetime] = None
     
-    # Nombres legibles (Joins)
     nombre_empresa: str 
     nombre_area: str
+    nombre_responsable: Optional[str] = None
+    nombre_status: Optional[str] = None
 
     class Config:
         from_attributes = True
-
-# --- ESQUEMA PARA LISTAS DESPLEGABLES (CATÁLOGOS) ---
-class CatalogoOut(BaseModel):
-    id: int
-    nombre: str
-
-    class Config:
-        from_attributes = True
-
-# --- ESQUEMA DE RESPUESTA COMPLETA DE LISTAS ---
-class ListasDesplegables(BaseModel):
-    origenes: List[CatalogoOut]
-    tipos_req: List[CatalogoOut]
-    servicios: List[CatalogoOut]
-    intervenciones: List[CatalogoOut]
-    medios: List[CatalogoOut]
-    resultados: List[CatalogoOut]
-    status: List[CatalogoOut]

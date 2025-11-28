@@ -236,19 +236,12 @@ def listar_actividades(empresa_id: int = None, db: Session = Depends(get_db)):
     
     actividades = query.all()
     
-    # Mapeo expandido para V1.1 (Joins manuales para visualización)
+    # Mapeo manual
     for act in actividades:
-        # Nombres básicos
         act.nombre_empresa = act.empresa_rel.razon_social if act.empresa_rel else "N/A"
         act.nombre_area = act.area_rel.codigo if act.area_rel else "N/A"
-        
-        # Nombres de catálogos (evita mostrar IDs en la tabla)
-        act.nombre_origen = act.origen_rel.nombre if act.origen_rel else ""
-        act.nombre_tipo_req = act.tipo_req_rel.nombre if act.tipo_req_rel else ""
-        act.nombre_status = act.status_rel.nombre if act.status_rel else "Sin Estado"
-        
-        # Nombres de personas
         act.nombre_responsable = act.responsable_rel.nombre_completo if act.responsable_rel else "Sin Asignar"
+        act.nombre_status = act.status_rel.nombre if act.status_rel else "Sin Estado"
     
     return actividades
 
