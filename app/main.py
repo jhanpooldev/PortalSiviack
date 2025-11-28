@@ -24,7 +24,7 @@ origins = [
     "http://localhost",
     "http://localhost:8080",
     "http://127.0.0.1:5500",
-    "http://localhost:5173", # Puerto de Vite/React
+    "http://localhost:5173",
     "*"
 ]
 
@@ -119,7 +119,6 @@ def actualizar_usuario(id: int, datos: schemas.UsuarioCreate, db: Session = Depe
     user.email = datos.email
     user.rol = datos.rol
     
-    # Solo actualizamos contraseña si envían algo diferente a la default o vacío
     if datos.password and len(datos.password) > 0:
          user.password_hash = security.get_password_hash(datos.password)
 
@@ -152,30 +151,22 @@ def eliminar_empresa(id: int, db: Session = Depends(get_db)):
 
 @app.put("/empresas/{id}", response_model=schemas.EmpresaOut, tags=["Empresas"])
 def actualizar_empresa(id: int, empresa_update: schemas.EmpresaBase, db: Session = Depends(get_db)):
-    # 1. Buscar la empresa existente en la base de datos
     db_emp = db.query(models.Empresa).filter(models.Empresa.id == id).first()
+    if not db_emp: raise HTTPException(status_code=404, detail="Empresa no encontrada")
 
-    # 2. Verificar si existe
-    if not db_emp:
-        raise HTTPException(status_code=404, detail="Empresa no encontrada")
-
-    # 3. Actualizar los atributos del objeto db_emp con los del esquema recibido
-    # (Esto actualiza dinámicamente todos los campos que vengan en empresa_update)
     for key, value in empresa_update.dict().items():
         setattr(db_emp, key, value)
 
-    # 4. Confirmar cambios y refrescar el objeto
     db.commit()
     db.refresh(db_emp)
-    
     return db_emp
+
 # ==========================================
 # ÁREAS (CRUD VINCULADO)
 # ==========================================
 
 @app.post("/areas/", response_model=schemas.AreaOut, tags=["Áreas"])
 def crear_area(area: schemas.AreaCreate, db: Session = Depends(get_db)):
-    # Validar que la empresa exista
     emp = db.query(models.Empresa).filter(models.Empresa.id == area.empresa_id).first()
     if not emp: raise HTTPException(404, "La empresa especificada no existe")
 
@@ -183,8 +174,6 @@ def crear_area(area: schemas.AreaCreate, db: Session = Depends(get_db)):
     db.add(db_area)
     db.commit()
     db.refresh(db_area)
-    
-    # Rellenar nombre para la respuesta
     db_area.nombre_empresa = emp.razon_social
     return db_area
 
@@ -195,7 +184,6 @@ def listar_areas(empresa_id: int = None, db: Session = Depends(get_db)):
         query = query.filter(models.Area.empresa_id == empresa_id)
     
     areas = query.all()
-    # Mapeo manual de nombres
     for a in areas:
         a.nombre_empresa = a.empresa.razon_social if a.empresa else "Sin Empresa"
     return areas
@@ -215,32 +203,29 @@ def actualizar_area(id: int, datos: schemas.AreaBase, db: Session = Depends(get_
     
     area.codigo = datos.codigo
     area.nombre = datos.nombre
-    # Nota: No solemos cambiar la empresa_id al editar por seguridad, pero se podría
     
     db.commit()
     db.refresh(area)
-    # Re-mapear nombre empresa para la respuesta
     area.nombre_empresa = area.empresa.razon_social if area.empresa else "N/A"
     return area
 
 # ==========================================
-# ACTIVIDADES (CORE)
+# ACTIVIDADES (CORE V1.1) - ¡ACTUALIZADO!
 # ==========================================
 
 @app.post("/actividades/", response_model=schemas.ActividadOut, tags=["Actividades"])
 def crear_actividad(actividad: schemas.ActividadCreate, db: Session = Depends(get_db)):
+    # Aquí recibimos TODOS los campos del formulario V1.1
     nueva = models.Actividad(**actividad.dict())
     db.add(nueva)
     db.commit()
     db.refresh(nueva)
     
-    # Mapeo de nombres para respuesta inmediata
-    if nueva.empresa_rel: nueva.nombre_empresa = nueva.empresa_rel.razon_social
-    else: nueva.nombre_empresa = "N/A"
-        
-    if nueva.area_rel: nueva.nombre_area = nueva.area_rel.nombre
-    else: nueva.nombre_area = "N/A"
-        
+    # Mapeo manual para asegurar que los nombres viajen al frontend en la respuesta inmediata
+    nueva.nombre_empresa = nueva.empresa_rel.razon_social if nueva.empresa_rel else "N/A"
+    nueva.nombre_area = nueva.area_rel.codigo if nueva.area_rel else "N/A"
+    nueva.nombre_responsable = nueva.responsable_rel.nombre_completo if nueva.responsable_rel else None
+    
     return nueva
 
 @app.get("/actividades/", response_model=List[schemas.ActividadOut], tags=["Actividades"])
@@ -250,9 +235,20 @@ def listar_actividades(empresa_id: int = None, db: Session = Depends(get_db)):
         query = query.filter(models.Actividad.empresa_id == empresa_id)
     
     actividades = query.all()
+    
+    # Mapeo expandido para V1.1 (Joins manuales para visualización)
     for act in actividades:
+        # Nombres básicos
         act.nombre_empresa = act.empresa_rel.razon_social if act.empresa_rel else "N/A"
-        act.nombre_area = act.area_rel.nombre if act.area_rel else "N/A"
+        act.nombre_area = act.area_rel.codigo if act.area_rel else "N/A"
+        
+        # Nombres de catálogos (evita mostrar IDs en la tabla)
+        act.nombre_origen = act.origen_rel.nombre if act.origen_rel else ""
+        act.nombre_tipo_req = act.tipo_req_rel.nombre if act.tipo_req_rel else ""
+        act.nombre_status = act.status_rel.nombre if act.status_rel else "Sin Estado"
+        
+        # Nombres de personas
+        act.nombre_responsable = act.responsable_rel.nombre_completo if act.responsable_rel else "Sin Asignar"
     
     return actividades
 
@@ -269,8 +265,26 @@ def actualizar_actividad(id: int, cambios: schemas.ActividadUpdate, db: Session 
     db.commit()
     db.refresh(act)
     
-    # Mapeo para respuesta
+    # Re-mapeo para respuesta
     act.nombre_empresa = act.empresa_rel.razon_social if act.empresa_rel else "N/A"
-    act.nombre_area = act.area_rel.nombre if act.area_rel else "N/A"
+    act.nombre_area = act.area_rel.codigo if act.area_rel else "N/A"
+    act.nombre_responsable = act.responsable_rel.nombre_completo if act.responsable_rel else "Sin Asignar"
+    act.nombre_status = act.status_rel.nombre if act.status_rel else "Sin Estado"
     
     return act
+
+# ==========================================
+# RUTAS DE MAESTROS (CATÁLOGOS V1.1)
+# ==========================================
+
+@app.get("/config/listas", response_model=schemas.ListasDesplegables, tags=["Configuración"])
+def obtener_listas_desplegables(db: Session = Depends(get_db)):
+    return {
+        "origenes": db.query(models.OrigenRequerimiento).all(),
+        "tipos_req": db.query(models.TipoRequerimiento).all(),
+        "servicios": db.query(models.TipoServicio).all(),
+        "intervenciones": db.query(models.TipoIntervencion).all(), # Sin tilde, como en models.py
+        "medios": db.query(models.MedioControl).all(),
+        "resultados": db.query(models.ControlResultados).all(),
+        "status": db.query(models.StatusActividad).all()
+    }

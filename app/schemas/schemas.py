@@ -55,6 +55,7 @@ class AreaCreate(AreaBase):
 
 class AreaOut(AreaBase):
     id: int
+    empresa_id: int
     nombre_empresa: Optional[str] = None # Para mostrar en la tabla del Admin
     class Config:
         from_attributes = True
@@ -127,3 +128,21 @@ class ActividadOut(ActividadBase):
 
     class Config:
         from_attributes = True
+
+# --- ESQUEMA PARA LISTAS DESPLEGABLES (CATÁLOGOS) ---
+class CatalogoOut(BaseModel):
+    id: int
+    nombre: str
+
+    class Config:
+        from_attributes = True
+
+# --- ESQUEMA DE RESPUESTA COMPLETA DE LISTAS ---
+class ListasDesplegables(BaseModel):
+    origenes: List[CatalogoOut]
+    tipos_req: List[CatalogoOut]
+    servicios: List[CatalogoOut]
+    intervenciones: List[CatalogoOut]
+    medios: List[CatalogoOut]
+    resultados: List[CatalogoOut]
+    status: List[CatalogoOut]
