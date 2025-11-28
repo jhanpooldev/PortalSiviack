@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date, datetime
 
-# 1. SEGURIDAD
+# --- 1. SEGURIDAD Y USUARIOS ---
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -25,7 +25,7 @@ class UsuarioOut(BaseModel):
     class Config:
         from_attributes = True
 
-# 2. CATÁLOGOS
+# --- 2. CATÁLOGOS ---
 class CatalogoBase(BaseModel):
     id: int
     nombre: str
@@ -41,7 +41,7 @@ class ListasDesplegables(BaseModel):
     resultados: List[CatalogoBase]
     status: List[CatalogoBase]
 
-# 3. EMPRESAS Y ÁREAS
+# --- 3. EMPRESAS Y ÁREAS ---
 class EmpresaBase(BaseModel):
     razon_social: str
     ruc: Optional[str] = None
@@ -66,40 +66,45 @@ class AreaOut(AreaBase):
     class Config:
         from_attributes = True
 
-# 4. ACTIVIDADES (MODIFICADO V1.2)
+# --- 4. ACTIVIDADES (MODIFICADO V1.2.1) ---
 class ActividadBase(BaseModel):
-    descripcion: str
+    # General
     empresa_id: int
     area_id: int
+    descripcion: str
+    development_doing: Optional[str] = None
+    orden_servicio_legal: Optional[str] = None
+    prioridad_atencion: Optional[str] = "Media"
     
+    # Clasificación
     origen_id: Optional[int] = None
     tipo_req_id: Optional[int] = None
+    dueno_proceso: Optional[str] = None
     tipo_servicio_id: Optional[int] = None
     tipo_intervencion_id: Optional[int] = None
     
-    # --- CAMBIOS AQUÍ ---
-    dueno_proceso: Optional[str] = None
-    responsable_id: Optional[int] = None
-    quien_revisa: Optional[str] = None   # Ahora es String (Jefe...)
-    quien_aprueba: Optional[str] = None  # Ahora es String (Gerente...)
+    # Roles
+    quien_revisa: Optional[str] = None
+    quien_aprueba: Optional[str] = None
     autoridad_rq: Optional[str] = None
+    responsable_id: Optional[int] = None
     
+    # Fechas
     fecha_compromiso: Optional[date] = None
     fecha_entrega_real: Optional[date] = None
-    proxima_validacion: Optional[date] = None
-    frecuencia_control_dias: Optional[int] = None
     
-    status_id: Optional[int] = None
-    avance: Optional[float] = 0.0
+    # Control
+    days_late: Optional[int] = 0
+    prioridad_accion: Optional[str] = None
     condicion_actual: Optional[str] = "Abierta"
-    prioridad_atencion: Optional[str] = "Media"
-    
-    development_doing: Optional[str] = None
-    orden_servicio_legal: Optional[str] = None
+    avance: Optional[float] = 0.0
     producto_entregable: Optional[str] = None
     medio_control_id: Optional[int] = None
+    frecuencia_control_dias: Optional[int] = None
     control_resultados_id: Optional[int] = None
+    proxima_validacion: Optional[date] = None
     link_evidencia: Optional[str] = None
+    status_id: Optional[int] = None
     observaciones: Optional[str] = None
 
 class ActividadCreate(ActividadBase):
@@ -111,10 +116,9 @@ class ActividadUpdate(ActividadBase):
 class ActividadOut(ActividadBase):
     id: int
     origin_date: Optional[date] = None
-    days_late: Optional[int] = 0
-    prioridad_accion: Optional[str] = None
     created_at: Optional[datetime] = None
     
+    # Nombres expandidos
     nombre_empresa: str 
     nombre_area: str
     nombre_responsable: Optional[str] = None
