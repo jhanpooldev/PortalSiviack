@@ -26,11 +26,10 @@ const ActivityFormModal = ({ show, handleClose, token, onSave, activityToEdit })
         tipo_intervencion_id: '', quien_revisa: '', quien_aprueba: '', autoridad_rq: '', responsable_id: '',
         
         // Fechas
-        fecha_compromiso: '', fecha_entrega_real: '', proxima_validacion: '',
-        
-        // Control
-        condicion_actual: 'Abierta', avance: 0, producto_entregable: '', medio_control_id: '',
-        frecuencia_control_dias: '', control_resultados_id: '', link_evidencia: '', status_id: '', observaciones: ''
+        fecha_compromiso: '', fecha_entrega_real: '', proxima_validacion: '', frecuencia_control_dias: '',
+        avance: 0, condicion_actual: 'Abierta', status_id: '', prioridad_atencion: 'Media',
+        producto_entregable: '', medio_control_id: '', control_resultados_id: '',
+        link_evidencia: '', observaciones: ''
     };
     
     const [formData, setFormData] = useState(initialState);
@@ -48,6 +47,7 @@ const ActivityFormModal = ({ show, handleClose, token, onSave, activityToEdit })
                 empresa_id: activityToEdit.empresa_id || '',
                 area_id: activityToEdit.area_id || '',
                 fecha_compromiso: activityToEdit.fecha_compromiso || '',
+                fecha_entrega_real: activityToEdit.fecha_entrega_real || '',
             });
         } else {
             setFormData(initialState);
@@ -75,7 +75,11 @@ const ActivityFormModal = ({ show, handleClose, token, onSave, activityToEdit })
             setListas(resListas.data);
             setEmpresas(resEmp.data);
             setAreas(resArea.data);
-            setTrabajadores(resUser.data);
+            
+            // FILTRO AÑADIDO: Solo Admins y Consultores en la lista de trabajadores
+            const soloEquipoSiviack = resUser.data.filter(u => u.rol === 'ADMIN' || u.rol === 'CONSULTOR');
+            setTrabajadores(soloEquipoSiviack);
+
         } catch (error) { console.error("Error cargando catálogos", error); }
     };
 
@@ -172,9 +176,10 @@ const ActivityFormModal = ({ show, handleClose, token, onSave, activityToEdit })
 
                                     <div className="col-md-6">
                                         <label className="form-label text-primary fw-bold">Dueño del Proceso</label>
+                                        {/* LÓGICA AÑADIDA: Usamos areasFiltradas en lugar de 'areas' general */}
                                         <select className="form-select" name="dueno_proceso" value={formData.dueno_proceso || ''} onChange={handleChange}>
-                                            <option value="">-- Seleccione Área --</option>
-                                            {areas.map(a => <option key={a.id} value={a.codigo}>{a.codigo} - {a.nombre}</option>)}
+                                            <option value="">-- Seleccione Área (Misma Empresa) --</option>
+                                            {areasFiltradas.map(a => <option key={a.id} value={a.codigo}>{a.codigo} - {a.nombre}</option>)}
                                         </select>
                                     </div>
                                     <div className="col-md-6">
@@ -216,6 +221,7 @@ const ActivityFormModal = ({ show, handleClose, token, onSave, activityToEdit })
                                     </div>
                                     <div className="col-md-4">
                                         <label className="form-label fw-bold">Responsable Éxito</label>
+                                        {/* Usamos la lista 'trabajadores' que ya está filtrada (sin Clientes) */}
                                         <select className="form-select" name="responsable_id" value={formData.responsable_id || ''} onChange={handleChange}>
                                             <option value="">-- Consultor --</option>
                                             {trabajadores.map(u => <option key={u.id} value={u.id}>{u.nombre_completo}</option>)}
