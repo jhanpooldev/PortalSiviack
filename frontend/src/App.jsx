@@ -1,51 +1,34 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-
-// Importamos las páginas
 import LoginPage from './pages/LoginPage'; 
 import Dashboard from './pages/Dashboard';
-import EmpresasPage from './pages/EmpresasPage'; // <--- Asegúrate de que este archivo exista en /pages
+import EmpresasPage from './pages/EmpresasPage'; // O AdminPage si le cambiaste el nombre
+import MyTasksPage from './pages/MyTasksPage'; // <--- IMPORTAR
 
 function App() {
-  // Función para simular si el usuario está logueado
-  const isAuthenticated = () => {
-    // Si hay token JWT guardado, asumimos que está logueado
-    return localStorage.getItem('access_token') ? true : false;
-  };
+  const isAuthenticated = () => localStorage.getItem('access_token') ? true : false;
 
-  // Componente que protege la ruta (Si no hay login, te manda fuera)
   const ProtectedRoute = ({ children }) => {
-    if (!isAuthenticated()) {
-      return <Navigate to="/login" replace />;
-    }
+    if (!isAuthenticated()) return <Navigate to="/login" replace />;
     return children;
   };
 
   return (
     <Routes>
-      {/* 1. Ruta de Login (Abierta/Pública) */}
       <Route path="/login" element={<LoginPage />} />
 
-      {/* 2. Ruta Dashboard (Protegida) */}
-      <Route 
-        path="/dashboard" 
-        element={
-          <ProtectedRoute>
-            <Dashboard />
-          </ProtectedRoute>
-        } 
-      />
+      <Route path="/dashboard" element={
+          <ProtectedRoute><Dashboard /></ProtectedRoute>
+      } />
 
-      {/* 3. NUEVA RUTA: Gestión de Empresas (Protegida) */}
-      <Route 
-        path="/empresas" 
-        element={
-          <ProtectedRoute>
-            <EmpresasPage />
-          </ProtectedRoute>
-        } 
-      />
+      <Route path="/empresas" element={
+          <ProtectedRoute><EmpresasPage /></ProtectedRoute>
+      } />
 
-      {/* Redirección por defecto: Si entran a la raíz, van al dashboard */}
+      {/* NUEVA RUTA */}
+      <Route path="/mis-pendientes" element={
+          <ProtectedRoute><MyTasksPage /></ProtectedRoute>
+      } />
+
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );

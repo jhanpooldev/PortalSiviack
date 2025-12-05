@@ -69,7 +69,7 @@ def poblar_catalogos():
         status_list = [
             "Entregado a Tiempo", "En Proceso", "Tiempo Límite",
             "Entregado Fuera de Plazo", "Recibido para su Atención",
-            "Enviado para su Revisión", "Atrasado", "Bloqueado", "Abierta", "Cerrada"
+            "Enviado para su Revisión", "Atrasado", "Bloqueado"
         ]
         for nombre in status_list:
             if not db.query(models.StatusActividad).filter_by(nombre=nombre).first():

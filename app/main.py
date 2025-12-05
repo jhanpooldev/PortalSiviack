@@ -1,9 +1,9 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from datetime import timedelta
+from datetime import timedelta, date
 from jose import JWTError, jwt 
 
 # Importaciones internas
@@ -12,10 +12,10 @@ from app.db.database import engine, get_db
 from app.db import models
 from app.core import security
 
-# 1. Crear tablas automáticamente (Si se hizo reset)
+# 1. Crear tablas automáticamente al iniciar
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="SIVIACK Portal API", version="2.0")
+app = FastAPI(title="SIVIACK Portal API", version="2.2")
 
 # ==========================================
 # CONFIGURACIÓN DE SEGURIDAD (CORS)
@@ -24,7 +24,7 @@ origins = [
     "http://localhost",
     "http://localhost:8080",
     "http://127.0.0.1:5500",
-    "http://localhost:5173",
+    "http://localhost:5173", # Frontend Vite
     "*"
 ]
 
@@ -39,7 +39,7 @@ app.add_middleware(
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # ==========================================
-# FUNCIONES DE SEGURIDAD
+# FUNCIONES DE SEGURIDAD (MIDDLEWARE)
 # ==========================================
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
@@ -63,6 +63,17 @@ def solo_admin(current_user: models.Usuario = Depends(get_current_user)):
     if current_user.rol != "ADMIN":
         raise HTTPException(status_code=403, detail="Acceso Denegado: Solo Admin")
     return current_user
+
+# ==========================================
+# RUTA RAIZ (Evita 404 al abrir la API)
+# ==========================================
+@app.get("/", tags=["General"])
+def read_root():
+    return {
+        "mensaje": "Bienvenido a la API de SIVIACK Portal",
+        "estado": "Operativo",
+        "documentacion": "/docs"
+    }
 
 # ==========================================
 # AUTENTICACIÓN Y USUARIOS
@@ -99,7 +110,13 @@ def crear_usuario(usuario: schemas.UsuarioCreate, db: Session = Depends(get_db),
 @app.get("/usuarios/", response_model=List[schemas.UsuarioOut], tags=["Gestión Usuarios"])
 def listar_usuarios(rol: str = None, db: Session = Depends(get_db)):
     query = db.query(models.Usuario)
-    if rol: query = query.filter(models.Usuario.rol == rol)
+    # Soporte para múltiples roles separados por coma (ej: ?rol=CONSULTOR,ADMIN)
+    if rol:
+        if "," in rol:
+            roles_lista = rol.split(",")
+            query = query.filter(models.Usuario.rol.in_(roles_lista))
+        else:
+            query = query.filter(models.Usuario.rol == rol)
     return query.all()
 
 @app.delete("/usuarios/{id}", tags=["Gestión Usuarios"])
@@ -118,6 +135,8 @@ def actualizar_usuario(id: int, datos: schemas.UsuarioCreate, db: Session = Depe
     user.nombre_completo = datos.nombre_completo
     user.email = datos.email
     user.rol = datos.rol
+    # Actualizar empresa si aplica
+    user.empresa_id = datos.empresa_id
     
     if datos.password and len(datos.password) > 0:
          user.password_hash = security.get_password_hash(datos.password)
@@ -203,6 +222,7 @@ def actualizar_area(id: int, datos: schemas.AreaBase, db: Session = Depends(get_
     
     area.codigo = datos.codigo
     area.nombre = datos.nombre
+    # Si enviaran empresa_id en el PUT habría que manejarlo, por ahora asumimos que no cambia de empresa
     
     db.commit()
     db.refresh(area)
@@ -210,47 +230,84 @@ def actualizar_area(id: int, datos: schemas.AreaBase, db: Session = Depends(get_
     return area
 
 # ==========================================
-# ACTIVIDADES (CORE V1.1) - ¡ACTUALIZADO!
+# ACTIVIDADES (CORE V1.2)
 # ==========================================
 
 @app.post("/actividades/", response_model=schemas.ActividadOut, tags=["Actividades"])
 def crear_actividad(actividad: schemas.ActividadCreate, db: Session = Depends(get_db)):
-    # Aquí recibimos TODOS los campos del formulario V1.1
-    nueva = models.Actividad(**actividad.dict())
+    data = actividad.dict()
+    
+    # Seguridad: Eliminar campos automáticos si vienen en el payload
+    if 'origin_date' in data: del data['origin_date']
+    if 'id' in data: del data['id']
+
+    nueva = models.Actividad(**data)
     db.add(nueva)
     db.commit()
     db.refresh(nueva)
     
-    # Mapeo manual para asegurar que los nombres viajen al frontend en la respuesta inmediata
+    # Rellenar nombres para la respuesta
     nueva.nombre_empresa = nueva.empresa_rel.razon_social if nueva.empresa_rel else "N/A"
     nueva.nombre_area = nueva.area_rel.codigo if nueva.area_rel else "N/A"
-    nueva.nombre_responsable = nueva.responsable_rel.nombre_completo if nueva.responsable_rel else None
+    nueva.nombre_responsable = nueva.responsable_rel.nombre_completo if nueva.responsable_rel else "S/A"
+    nueva.nombre_status = nueva.status_rel.nombre if nueva.status_rel else "Sin Estado"
+    
+    # Campos extra si los necesitas en la respuesta inmediata
+    nueva.nombre_origen = nueva.origen_rel.nombre if nueva.origen_rel else ""
     
     return nueva
 
 @app.get("/actividades/", response_model=List[schemas.ActividadOut], tags=["Actividades"])
-def listar_actividades(empresa_id: int = None, db: Session = Depends(get_db)):
+def listar_actividades(
+    empresa_id: Optional[int] = None,
+    area_id: Optional[int] = None,
+    responsable_id: Optional[int] = None,
+    status_id: Optional[int] = None,
+    fecha_inicio: Optional[date] = None,
+    fecha_fin: Optional[date] = None,
+    db: Session = Depends(get_db)
+):
     query = db.query(models.Actividad)
-    if empresa_id:
-        query = query.filter(models.Actividad.empresa_id == empresa_id)
+
+    # Filtros
+    if empresa_id: query = query.filter(models.Actividad.empresa_id == empresa_id)
+    if area_id: query = query.filter(models.Actividad.area_id == area_id)
+    if responsable_id: query = query.filter(models.Actividad.responsable_id == responsable_id)
+    if status_id: query = query.filter(models.Actividad.status_id == status_id)
+    if fecha_inicio: query = query.filter(models.Actividad.fecha_compromiso >= fecha_inicio)
+    if fecha_fin: query = query.filter(models.Actividad.fecha_compromiso <= fecha_fin)
     
     actividades = query.all()
     
-    # Mapeo manual
+    # Mapeo
     for act in actividades:
         act.nombre_empresa = act.empresa_rel.razon_social if act.empresa_rel else "N/A"
         act.nombre_area = act.area_rel.codigo if act.area_rel else "N/A"
-        act.nombre_responsable = act.responsable_rel.nombre_completo if act.responsable_rel else "Sin Asignar"
+        act.nombre_responsable = act.responsable_rel.nombre_completo if act.responsable_rel else "S/A"
         act.nombre_status = act.status_rel.nombre if act.status_rel else "Sin Estado"
-    
+        
+        act.nombre_origen = act.origen_rel.nombre if act.origen_rel else ""
+        act.nombre_tipo_req = act.tipo_req_rel.nombre if act.tipo_req_rel else ""
+
     return actividades
+
+@app.get("/actividades/{id}", response_model=schemas.ActividadOut, tags=["Actividades"])
+def obtener_actividad(id: int, db: Session = Depends(get_db)):
+    act = db.query(models.Actividad).filter(models.Actividad.id == id).first()
+    if not act: raise HTTPException(404, "Actividad no encontrada")
+    
+    act.nombre_empresa = act.empresa_rel.razon_social if act.empresa_rel else "N/A"
+    act.nombre_area = act.area_rel.codigo if act.area_rel else "N/A"
+    act.nombre_responsable = act.responsable_rel.nombre_completo if act.responsable_rel else "S/A"
+    act.nombre_status = act.status_rel.nombre if act.status_rel else "Sin Estado"
+    
+    return act
 
 @app.put("/actividades/{id}", response_model=schemas.ActividadOut, tags=["Actividades"])
 def actualizar_actividad(id: int, cambios: schemas.ActividadUpdate, db: Session = Depends(get_db)):
     act = db.query(models.Actividad).filter(models.Actividad.id == id).first()
     if not act: raise HTTPException(404, "Actividad no encontrada")
     
-    # Actualizar campos dinámicamente
     datos = cambios.dict(exclude_unset=True)
     for key, value in datos.items():
         setattr(act, key, value)
@@ -258,16 +315,33 @@ def actualizar_actividad(id: int, cambios: schemas.ActividadUpdate, db: Session 
     db.commit()
     db.refresh(act)
     
-    # Re-mapeo para respuesta
     act.nombre_empresa = act.empresa_rel.razon_social if act.empresa_rel else "N/A"
     act.nombre_area = act.area_rel.codigo if act.area_rel else "N/A"
-    act.nombre_responsable = act.responsable_rel.nombre_completo if act.responsable_rel else "Sin Asignar"
+    act.nombre_responsable = act.responsable_rel.nombre_completo if act.responsable_rel else "S/A"
     act.nombre_status = act.status_rel.nombre if act.status_rel else "Sin Estado"
     
     return act
 
+@app.get("/mis-pendientes/", response_model=List[schemas.ActividadOut], tags=["Actividades"])
+def listar_mis_pendientes(db: Session = Depends(get_db), current_user: models.Usuario = Depends(get_current_user)):
+    # Filtramos por status que no sea Cerrada (asumiendo que "Cerrada" es un estado final conocido o por condicion_actual)
+    query = db.query(models.Actividad).filter(models.Actividad.condicion_actual == 'Abierta')
+    
+    if current_user.rol == 'CONSULTOR':
+        query = query.filter(models.Actividad.responsable_id == current_user.id)
+    
+    actividades = query.all()
+    
+    for act in actividades:
+        act.nombre_empresa = act.empresa_rel.razon_social if act.empresa_rel else "N/A"
+        act.nombre_area = act.area_rel.codigo if act.area_rel else "N/A"
+        act.nombre_responsable = act.responsable_rel.nombre_completo if act.responsable_rel else "S/A"
+        act.nombre_status = act.status_rel.nombre if act.status_rel else "Sin Estado"
+    
+    return actividades
+
 # ==========================================
-# RUTAS DE MAESTROS (CATÁLOGOS V1.1)
+# RUTAS DE MAESTROS (CATÁLOGOS)
 # ==========================================
 
 @app.get("/config/listas", response_model=schemas.ListasDesplegables, tags=["Configuración"])
@@ -276,24 +350,8 @@ def obtener_listas_desplegables(db: Session = Depends(get_db)):
         "origenes": db.query(models.OrigenRequerimiento).all(),
         "tipos_req": db.query(models.TipoRequerimiento).all(),
         "servicios": db.query(models.TipoServicio).all(),
-        "intervenciones": db.query(models.TipoIntervencion).all(), # Sin tilde, como en models.py
+        "intervenciones": db.query(models.TipoIntervencion).all(), 
         "medios": db.query(models.MedioControl).all(),
         "resultados": db.query(models.ControlResultados).all(),
         "status": db.query(models.StatusActividad).all()
     }
-@app.get("/actividades/{id}", response_model=schemas.ActividadOut, tags=["Actividades"])
-def obtener_actividad(id: int, db: Session = Depends(get_db)):
-    act = db.query(models.Actividad).filter(models.Actividad.id == id).first()
-    if not act: raise HTTPException(404, "Actividad no encontrada")
-    
-    # Mapeo de nombres
-    act.nombre_empresa = act.empresa_rel.razon_social if act.empresa_rel else "N/A"
-    act.nombre_area = act.area_rel.codigo if act.area_rel else "N/A"
-    act.nombre_responsable = act.responsable_rel.nombre_completo if act.responsable_rel else "S/A"
-    act.nombre_status = act.status_rel.nombre if act.status_rel else "Sin Estado"
-    
-    # Mapeo de catálogos adicionales (Para ver detalles completos)
-    # Estos nombres no están en ActividadOut base, pero podemos agregarlos o mostrarlos en frontend
-    # Por ahora ActividadOut tiene los básicos. 
-    
-    return act

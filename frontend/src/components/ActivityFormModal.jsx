@@ -14,18 +14,10 @@ const ActivityFormModal = ({ show, handleClose, token, onSave, activityToEdit })
     const [areasFiltradas, setAreasFiltradas] = useState([]); 
     const [trabajadores, setTrabajadores] = useState([]);
 
-    // ESTADO INICIAL (30 CAMPOS)
     const initialState = {
-        // General
         empresa_id: '', area_id: '', descripcion: '', development_doing: '', orden_servicio_legal: '',
-        
-        // Clasificación
-        prioridad_atencion: 'Media', origen_id: '', tipo_req_id: '', dueno_proceso: '', tipo_servicio_id: '',
-        
-        // Roles
+        origen_id: '', tipo_req_id: '', dueno_proceso: '', tipo_servicio_id: '',
         tipo_intervencion_id: '', quien_revisa: '', quien_aprueba: '', autoridad_rq: '', responsable_id: '',
-        
-        // Fechas
         fecha_compromiso: '', fecha_entrega_real: '', proxima_validacion: '', frecuencia_control_dias: '',
         avance: 0, condicion_actual: 'Abierta', status_id: '', prioridad_atencion: 'Media',
         producto_entregable: '', medio_control_id: '', control_resultados_id: '',
@@ -48,6 +40,7 @@ const ActivityFormModal = ({ show, handleClose, token, onSave, activityToEdit })
                 area_id: activityToEdit.area_id || '',
                 fecha_compromiso: activityToEdit.fecha_compromiso || '',
                 fecha_entrega_real: activityToEdit.fecha_entrega_real || '',
+                proxima_validacion: activityToEdit.proxima_validacion || '',
             });
         } else {
             setFormData(initialState);
@@ -76,9 +69,9 @@ const ActivityFormModal = ({ show, handleClose, token, onSave, activityToEdit })
             setEmpresas(resEmp.data);
             setAreas(resArea.data);
             
-            // FILTRO AÑADIDO: Solo Admins y Consultores en la lista de trabajadores
-            const soloEquipoSiviack = resUser.data.filter(u => u.rol === 'ADMIN' || u.rol === 'CONSULTOR');
-            setTrabajadores(soloEquipoSiviack);
+            // Filtro: Solo consultores y admins
+            const equipo = resUser.data.filter(u => u.rol === 'ADMIN' || u.rol === 'CONSULTOR');
+            setTrabajadores(equipo);
 
         } catch (error) { console.error("Error cargando catálogos", error); }
     };
@@ -110,9 +103,9 @@ const ActivityFormModal = ({ show, handleClose, token, onSave, activityToEdit })
 
                     <div className="modal-header p-0">
                         <ul className="nav nav-tabs w-100 bg-light px-3 pt-2">
-                            <li className="nav-item"><button className={`nav-link ${tabActiva===1?'active fw-bold':''}`} onClick={()=>setTabActiva(1)}>1. General</button></li>
-                            <li className="nav-item"><button className={`nav-link ${tabActiva===2?'active fw-bold':''}`} onClick={()=>setTabActiva(2)}>2. Control y Roles</button></li>
-                            <li className="nav-item"><button className={`nav-link ${tabActiva===3?'active fw-bold':''}`} onClick={()=>setTabActiva(3)}>3. Resultados</button></li>
+                            <li className="nav-item"><button className={`nav-link ${tabActiva===1?'active fw-bold text-primary':''}`} onClick={()=>setTabActiva(1)}>1. General</button></li>
+                            <li className="nav-item"><button className={`nav-link ${tabActiva===2?'active fw-bold text-primary':''}`} onClick={()=>setTabActiva(2)}>2. Clasificación</button></li>
+                            <li className="nav-item"><button className={`nav-link ${tabActiva===3?'active fw-bold text-primary':''}`} onClick={()=>setTabActiva(3)}>3. Control</button></li>
                         </ul>
                     </div>
 
@@ -150,7 +143,7 @@ const ActivityFormModal = ({ show, handleClose, token, onSave, activityToEdit })
                                 </div>
                             )}
 
-                            {/* TAB 2: CONTROL Y ROLES */}
+                            {/* TAB 2: CLASIFICACIÓN */}
                             {tabActiva === 2 && (
                                 <div className="row g-3">
                                     <div className="col-md-4">
@@ -176,12 +169,19 @@ const ActivityFormModal = ({ show, handleClose, token, onSave, activityToEdit })
 
                                     <div className="col-md-6">
                                         <label className="form-label text-primary fw-bold">Dueño del Proceso</label>
-                                        {/* LÓGICA AÑADIDA: Usamos areasFiltradas en lugar de 'areas' general */}
                                         <select className="form-select" name="dueno_proceso" value={formData.dueno_proceso || ''} onChange={handleChange}>
-                                            <option value="">-- Seleccione Área (Misma Empresa) --</option>
-                                            {areasFiltradas.map(a => <option key={a.id} value={a.codigo}>{a.codigo} - {a.nombre}</option>)}
+                                            <option value="">-- Seleccione Área --</option>
+                                            {areas.map(a => <option key={a.id} value={a.codigo}>{a.codigo} - {a.nombre}</option>)}
                                         </select>
                                     </div>
+                                    <div className="col-md-6">
+                                        <label className="form-label fw-bold">Responsable Éxito</label>
+                                        <select className="form-select" name="responsable_id" value={formData.responsable_id || ''} onChange={handleChange}>
+                                            <option value="">-- Consultor --</option>
+                                            {trabajadores.map(u => <option key={u.id} value={u.id}>{u.nombre_completo}</option>)}
+                                        </select>
+                                    </div>
+
                                     <div className="col-md-6">
                                         <label className="form-label">Tipo Servicio</label>
                                         <select className="form-select" name="tipo_servicio_id" value={formData.tipo_servicio_id || ''} onChange={handleChange}>
@@ -197,13 +197,13 @@ const ActivityFormModal = ({ show, handleClose, token, onSave, activityToEdit })
                                             {listas.intervenciones.map(x => <option key={x.id} value={x.id}>{x.nombre}</option>)}
                                         </select>
                                     </div>
-                                    <div className="col-md-6">
+                                    <div className="col-md-12">
                                         <label className="form-label">Autoridad que RQ</label>
                                         <input type="text" className="form-control" name="autoridad_rq" value={formData.autoridad_rq || ''} onChange={handleChange} />
                                     </div>
 
                                     {/* ROLES FIJOS */}
-                                    <div className="col-md-4">
+                                    <div className="col-md-6">
                                         <label className="form-label text-info">Quien Revisa</label>
                                         <select className="form-select" name="quien_revisa" value={formData.quien_revisa || ''} onChange={handleChange}>
                                             <option value="">-- Seleccione --</option>
@@ -211,7 +211,7 @@ const ActivityFormModal = ({ show, handleClose, token, onSave, activityToEdit })
                                             <option value="Coordinador del departamento">Coordinador del departamento</option>
                                         </select>
                                     </div>
-                                    <div className="col-md-4">
+                                    <div className="col-md-6">
                                         <label className="form-label text-danger">Quien Aprueba</label>
                                         <select className="form-select" name="quien_aprueba" value={formData.quien_aprueba || ''} onChange={handleChange}>
                                             <option value="">-- Seleccione --</option>
@@ -219,18 +219,10 @@ const ActivityFormModal = ({ show, handleClose, token, onSave, activityToEdit })
                                             <option value="Gerente de Operaciones">Gerente de Operaciones</option>
                                         </select>
                                     </div>
-                                    <div className="col-md-4">
-                                        <label className="form-label fw-bold">Responsable Éxito</label>
-                                        {/* Usamos la lista 'trabajadores' que ya está filtrada (sin Clientes) */}
-                                        <select className="form-select" name="responsable_id" value={formData.responsable_id || ''} onChange={handleChange}>
-                                            <option value="">-- Consultor --</option>
-                                            {trabajadores.map(u => <option key={u.id} value={u.id}>{u.nombre_completo}</option>)}
-                                        </select>
-                                    </div>
                                 </div>
                             )}
 
-                            {/* TAB 3: RESULTADOS Y FECHAS */}
+                            {/* TAB 3: CONTROL Y RESULTADOS (ACTUALIZADO) */}
                             {tabActiva === 3 && (
                                 <div className="row g-3">
                                     <div className="col-md-4">
@@ -269,6 +261,17 @@ const ActivityFormModal = ({ show, handleClose, token, onSave, activityToEdit })
                                         <label className="form-label">Producto Entregable</label>
                                         <input type="text" className="form-control" name="producto_entregable" value={formData.producto_entregable || ''} onChange={handleChange} />
                                     </div>
+                                    
+                                    {/* --- AQUÍ ESTÁ EL CAMPO QUE FALTABA VISUALMENTE --- */}
+                                    <div className="col-md-6">
+                                        <label className="form-label fw-bold text-success">Control de Resultados</label>
+                                        <select className="form-select" name="control_resultados_id" value={formData.control_resultados_id || ''} onChange={handleChange}>
+                                            <option value="">-- Seleccione --</option>
+                                            {listas.resultados.map(x => <option key={x.id} value={x.id}>{x.nombre}</option>)}
+                                        </select>
+                                    </div>
+                                    {/* ------------------------------------------------ */}
+
                                     <div className="col-md-6">
                                         <label className="form-label">Medio Control</label>
                                         <select className="form-select" name="medio_control_id" value={formData.medio_control_id || ''} onChange={handleChange}>
@@ -276,12 +279,11 @@ const ActivityFormModal = ({ show, handleClose, token, onSave, activityToEdit })
                                             {listas.medios.map(x => <option key={x.id} value={x.id}>{x.nombre}</option>)}
                                         </select>
                                     </div>
-                                    
-                                    <div className="col-md-4">
+                                    <div className="col-md-6">
                                         <label className="form-label">Frecuencia (Días)</label>
                                         <input type="number" className="form-control" name="frecuencia_control_dias" value={formData.frecuencia_control_dias || ''} onChange={handleChange} />
                                     </div>
-                                    <div className="col-md-8">
+                                    <div className="col-md-12">
                                         <label className="form-label">Link Evidencia</label>
                                         <input type="url" className="form-control" name="link_evidencia" value={formData.link_evidencia || ''} onChange={handleChange} placeholder="https://..." />
                                     </div>

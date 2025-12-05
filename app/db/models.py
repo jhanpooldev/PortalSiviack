@@ -4,13 +4,14 @@ from sqlalchemy.sql import func
 from app.db.database import Base
 
 # ==========================================
-# 1. TABLAS MAESTRAS
+# 1. TABLAS MAESTRAS (JERARQUÍA)
 # ==========================================
+
 class Empresa(Base):
     __tablename__ = "empresas"
     id = Column(Integer, primary_key=True, index=True)
     razon_social = Column(String(150), nullable=False)
-    shk = Column(String(20))
+    shk = Column(String(20)) # <--- AQUÍ ESTÁ EL CAMPO QUE TE FALTABA
     ruc = Column(String(20))
     activo = Column(Boolean, default=True)
     
@@ -23,8 +24,10 @@ class Area(Base):
     id = Column(Integer, primary_key=True, index=True)
     codigo = Column(String(20)) 
     nombre = Column(String(100))
+    
     empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=False)
     empresa = relationship("Empresa", back_populates="areas")
+    
     actividades = relationship("Actividad", back_populates="area_rel")
 
 class Usuario(Base):
@@ -34,12 +37,14 @@ class Usuario(Base):
     email = Column(String(100), unique=True, index=True)
     password_hash = Column(String(255))
     rol = Column(String(20)) 
+    
     empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=True)
     empresa = relationship("Empresa", back_populates="usuarios")
 
 # ==========================================
-# 2. TABLAS CATÁLOGO
+# 2. TABLAS CATÁLOGO (DESPLEGABLES)
 # ==========================================
+
 class OrigenRequerimiento(Base):
     __tablename__ = "cat_origenes"
     id = Column(Integer, primary_key=True)
@@ -76,55 +81,58 @@ class StatusActividad(Base):
     nombre = Column(String(100), unique=True)
 
 # ==========================================
-# 3. TABLA CENTRAL: ACTIVIDADES (CORREGIDA V1.2.1)
+# 3. TABLA CENTRAL: ACTIVIDADES (V1.1)
 # ==========================================
+
 class Actividad(Base):
     __tablename__ = "actividades"
 
     id = Column(Integer, primary_key=True, index=True)
     
-    # --- SECCIÓN GENERAL ---
-    # Identificación básica
-    empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=False) # SHK
-    area_id = Column(Integer, ForeignKey("areas.id"), nullable=False)       # Proceso / SP (Código Área)
-    descripcion = Column(Text, nullable=False)                              # Descripción (Backlog)
-    development_doing = Column(Text, nullable=True)                         # Development (Doing)
-    orden_servicio_legal = Column(String(255), nullable=True)               # Orden de Servicio
+    # --- Identificación ---
+    empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=False)
+    area_id = Column(Integer, ForeignKey("areas.id"), nullable=False)
     
-    # --- SECCIÓN CLASIFICACIÓN ---
-    prioridad_atencion = Column(String(50), nullable=True)                  # Prioridad Atención
+    descripcion = Column(Text, nullable=False)
+    development_doing = Column(Text, nullable=True)
+    orden_servicio_legal = Column(String(255), nullable=True)
+    
+    # --- Clasificación ---
     origen_id = Column(Integer, ForeignKey("cat_origenes.id"), nullable=True)
     tipo_req_id = Column(Integer, ForeignKey("cat_tipos_req.id"), nullable=True)
-    dueno_proceso = Column(String(100), nullable=True)                      # Dueño Proceso (Código Área)
     tipo_servicio_id = Column(Integer, ForeignKey("cat_servicios.id"), nullable=True)
     tipo_intervencion_id = Column(Integer, ForeignKey("cat_intervenciones.id"), nullable=True)
     
-    # --- SECCIÓN ROLES ---
-    quien_revisa = Column(String(100), nullable=True)                       # Quien Revisa (Rol fijo)
-    quien_aprueba = Column(String(100), nullable=True)                      # Quien Aprueba (Rol fijo)
-    autoridad_rq = Column(String(150), nullable=True)                       # Autoridad que RQ (Texto)
-    responsable_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True) # Responsable Éxito
+    # --- Roles ---
+    dueno_proceso = Column(String(100), nullable=True) 
+    quien_revisa = Column(String(100), nullable=True)  
+    quien_aprueba = Column(String(100), nullable=True) 
+    responsable_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    autoridad_rq = Column(String(150), nullable=True)
 
-    # --- SECCIÓN FECHAS ---
-    origin_date = Column(Date, server_default=func.current_date())          # Origin Date (Auto)
-    fecha_compromiso = Column(Date, nullable=False)                         # Fecha Compromiso
-    fecha_entrega_real = Column(Date, nullable=True)                        # Fecha Entrega (Real)
+    # --- Fechas ---
+    origin_date = Column(Date, server_default=func.current_date())
+    fecha_compromiso = Column(Date, nullable=False)
+    fecha_entrega_real = Column(Date, nullable=True)
+    proxima_validacion = Column(Date, nullable=True)
     
-    # --- SECCIÓN CONTROL ---
-    days_late = Column(Integer, default=0)                                  # Días atraso (Calculado)
-    prioridad_accion = Column(String(50), nullable=True)                    # Prioridad Acción (Calculado)
-    condicion_actual = Column(String(50), default="Abierta")                # Condición Actual
-    avance = Column(DECIMAL(5, 2), default=0.0)                             # % Avance
-    producto_entregable = Column(String(255), nullable=True)                # Producto Entregable
+    # --- Control ---
+    avance = Column(DECIMAL(5, 2), default=0.0)
+    condicion_actual = Column(String(50), default="Abierta")
+    prioridad_atencion = Column(String(50), nullable=True)
+    status_id = Column(Integer, ForeignKey("cat_status.id"), nullable=True)
+    days_late = Column(Integer, default=0)
+    prioridad_accion = Column(String(50), nullable=True)
+    
+    # --- Entregables ---
+    producto_entregable = Column(String(255), nullable=True)
     medio_control_id = Column(Integer, ForeignKey("cat_medios_control.id"), nullable=True)
-    frecuencia_control_dias = Column(Integer, nullable=True)                # Frecuencia Control (días)
+    frecuencia_control_dias = Column(Integer, nullable=True)
     control_resultados_id = Column(Integer, ForeignKey("cat_control_resultados.id"), nullable=True)
-    proxima_validacion = Column(Date, nullable=True)                        # Próxima Validación
-    link_evidencia = Column(Text, nullable=True)                            # Evidencia Control (URL)
-    status_id = Column(Integer, ForeignKey("cat_status.id"), nullable=True) # Status
-    observaciones = Column(Text, nullable=True)                             # Observaciones
+    link_evidencia = Column(Text, nullable=True)
+    observaciones = Column(Text, nullable=True)
 
-    # --- RELACIONES ---
+    # --- Relaciones ---
     empresa_rel = relationship("Empresa", back_populates="actividades")
     area_rel = relationship("Area", back_populates="actividades")
     responsable_rel = relationship("Usuario", foreign_keys=[responsable_id])
