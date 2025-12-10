@@ -126,3 +126,16 @@ class ActividadOut(ActividadBase):
 
     class Config:
         from_attributes = True
+
+# --- AUDITORÍA ---
+class AuditLogOut(BaseModel):
+    id: int
+    fecha: datetime
+    usuario: str
+    rol: str
+    accion: str
+    entidad: str
+    detalle: Optional[str] = None
+
+    class Config:
+        from_attributes = True

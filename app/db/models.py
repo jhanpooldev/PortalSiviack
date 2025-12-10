@@ -144,3 +144,17 @@ class Actividad(Base):
     medio_rel = relationship("MedioControl")
     resultado_rel = relationship("ControlResultados")
     status_rel = relationship("StatusActividad")
+
+# ==========================================
+# 4. TABLA DE AUDITORÍA (LOGS)
+# ==========================================
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    fecha = Column(DateTime(timezone=True), server_default=func.now())
+    usuario = Column(String(100))      # Nombre del usuario que hizo la acción
+    rol = Column(String(20))           # Rol del usuario (ADMIN, CONSULTOR...)
+    accion = Column(String(50))        # CREAR, EDITAR, ELIMINAR, LOGIN
+    entidad = Column(String(50))       # Actividad, Usuario, Empresa, Área
+    detalle = Column(Text, nullable=True) # Descripción (ej: "Creó actividad #45")
