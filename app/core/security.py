@@ -6,7 +6,7 @@ from passlib.context import CryptContext
 # CONFIGURACIÓN DE SEGURIDAD (Esto normalmente va en variables de entorno .env)
 SECRET_KEY = "SIVIACK_CLAVE_SECRETA_SUPER_DIFICIL_DE_ADIVINAR"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 180 # La sesión dura 180 minutos por seguridad bancaria
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 30 # La sesión dura 180 minutos por seguridad bancaria
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
